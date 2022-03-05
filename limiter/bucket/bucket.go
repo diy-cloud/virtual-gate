@@ -3,12 +3,11 @@ package bucket
 import (
 	"encoding/hex"
 	"net/http"
-	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/diy-cloud/virtual-gate/limiter"
+	"github.com/diy-cloud/virtual-gate/lock"
 )
 
 var nodePool = sync.Pool{
@@ -22,29 +21,16 @@ type node struct {
 	next  *node
 }
 
-type lock struct {
-	i int64
-}
-
-func (l *lock) Lock() {
-	for !atomic.CompareAndSwapInt64(&l.i, 0, 1) {
-		runtime.Gosched()
-	}
-}
-func (l *lock) Unlock() {
-	atomic.StoreInt64(&l.i, 0)
-}
-
 type Bucket struct {
 	recentlyTakensHead    *node
 	recentlyTakensTail    *node
 	recentlyTakensSet     map[string]int64
-	lock                  *lock
+	lock                  *lock.Lock
 	maxTokens             int64
 	tokens                int64
 	regenTime             time.Duration
 	sameRemoteIPLimitRate float64
-	goPool                chan struct{}
+	ch                    chan struct{}
 }
 
 func New(maxTokens, regenPerSecond int, sameRemoteIPLimitRate float64) limiter.Limiter {
@@ -53,12 +39,12 @@ func New(maxTokens, regenPerSecond int, sameRemoteIPLimitRate float64) limiter.L
 		recentlyTakensHead:    nil,
 		recentlyTakensTail:    nil,
 		recentlyTakensSet:     make(map[string]int64),
-		lock:                  new(lock),
+		lock:                  new(lock.Lock),
 		maxTokens:             int64(maxTokens),
 		tokens:                int64(maxTokens),
 		regenTime:             time.Second / time.Duration(regenPerSecond),
 		sameRemoteIPLimitRate: sameRemoteIPLimitRate,
-		goPool:                ch,
+		ch:                    ch,
 	}
 	go func() {
 		for range ch {
@@ -89,7 +75,7 @@ func (b *Bucket) decreaseToken() (bool, int) {
 		return false, http.StatusNotAcceptable
 	}
 	b.tokens--
-	b.goPool <- struct{}{}
+	b.ch <- struct{}{}
 	return true, http.StatusOK
 }
 
