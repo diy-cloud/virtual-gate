@@ -1,4 +1,4 @@
-package slide
+package slide_log
 
 import (
 	"sync"
@@ -19,17 +19,17 @@ type timeNode struct {
 	next  *timeNode
 }
 
-type Slide struct {
+type SlideLog struct {
 	recentlyTakensSet map[string]int64
 	lock              *lock.Lock
-	maxConnPerSecond  float64
+	maxConnPerSecond  int64
 	timeNodeHead      *timeNode
 	timeNodeTail      *timeNode
 	timeNodeCount     int64
 }
 
-func New(maxConnPerMicrosecond float64) limiter.Limiter {
-	return &Slide{
+func New(maxConnPerMicrosecond int64) limiter.Limiter {
+	return &SlideLog{
 		recentlyTakensSet: make(map[string]int64),
 		lock:              new(lock.Lock),
 		maxConnPerSecond:  maxConnPerMicrosecond,
@@ -39,7 +39,7 @@ func New(maxConnPerMicrosecond float64) limiter.Limiter {
 	}
 }
 
-func (s *Slide) TryTake(key []byte) (bool, int) {
+func (s *SlideLog) TryTake(_ []byte) (bool, int) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -58,7 +58,7 @@ func (s *Slide) TryTake(key []byte) (bool, int) {
 			break
 		}
 	}
-	if s.timeNodeCount >= int64(s.maxConnPerSecond) {
+	if s.timeNodeCount >= s.maxConnPerSecond {
 		return false, 0
 	}
 
