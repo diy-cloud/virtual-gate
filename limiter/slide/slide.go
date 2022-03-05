@@ -28,11 +28,11 @@ type Slide struct {
 	timeNodeCount     int64
 }
 
-func New(maxConnPerSecond float64) limiter.Limiter {
+func New(maxConnPerMicrosecond float64) limiter.Limiter {
 	return &Slide{
 		recentlyTakensSet: make(map[string]int64),
 		lock:              new(lock.Lock),
-		maxConnPerSecond:  maxConnPerSecond,
+		maxConnPerSecond:  maxConnPerMicrosecond,
 		timeNodeHead:      nil,
 		timeNodeTail:      nil,
 		timeNodeCount:     0,
@@ -43,8 +43,8 @@ func (s *Slide) TryTake(key []byte) (bool, int) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	now := time.Now().UnixMicro()
-	past := now - 1000000
+	now := time.Now().UnixNano()
+	past := now - 1000
 	for cur := s.timeNodeHead; cur != nil; cur = cur.next {
 		if cur.value < past {
 			if cur.next == nil {
