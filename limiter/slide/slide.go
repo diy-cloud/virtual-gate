@@ -8,17 +8,6 @@ import (
 	"github.com/diy-cloud/virtual-gate/lock"
 )
 
-var remoteNodePool = sync.Pool{
-	New: func() interface{} {
-		return new(remoteNode)
-	},
-}
-
-type remoteNode struct {
-	value string
-	next  *remoteNode
-}
-
 var timeNodePool = sync.Pool{
 	New: func() interface{} {
 		return new(timeNode)
@@ -31,36 +20,28 @@ type timeNode struct {
 }
 
 type Slide struct {
-	recentlyTakensHead *remoteNode
-	recentlyTakensTail *remoteNode
-	recentlyTakensSet  map[string]int64
-	lock               *lock.Lock
-	maxConnPerSecond   float64
-	timeNodeHead       *timeNode
-	timeNodeTail       *timeNode
-	timeNodeCount      int64
+	recentlyTakensSet map[string]int64
+	lock              *lock.Lock
+	maxConnPerSecond  float64
+	timeNodeHead      *timeNode
+	timeNodeTail      *timeNode
+	timeNodeCount     int64
 }
 
 func New(maxConnPerSecond float64) limiter.Limiter {
 	return &Slide{
-		recentlyTakensHead: nil,
-		recentlyTakensTail: nil,
-		recentlyTakensSet:  make(map[string]int64),
-		lock:               new(lock.Lock),
-		maxConnPerSecond:   maxConnPerSecond,
+		recentlyTakensSet: make(map[string]int64),
+		lock:              new(lock.Lock),
+		maxConnPerSecond:  maxConnPerSecond,
+		timeNodeHead:      nil,
+		timeNodeTail:      nil,
+		timeNodeCount:     0,
 	}
 }
 
 func (s *Slide) TryTake(key []byte) (bool, int) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	s.recentlyTakensSet[string(key)]++
-	if s.recentlyTakensHead == nil {
-		s.recentlyTakensHead = remoteNodePool.Get().(*remoteNode)
-		s.recentlyTakensHead.value = string(key)
-		s.recentlyTakensTail = s.recentlyTakensHead
-		return true, 0
-	}
 
 	now := time.Now().UnixMicro()
 	past := now - 1000000
@@ -92,9 +73,5 @@ func (s *Slide) TryTake(key []byte) (bool, int) {
 		s.timeNodeTail = newTimeNode
 	}
 	s.timeNodeCount++
-
-	s.recentlyTakensTail.next = remoteNodePool.Get().(*remoteNode)
-	s.recentlyTakensTail = s.recentlyTakensTail.next
-	s.recentlyTakensTail.value = string(key)
 	return true, 0
 }
