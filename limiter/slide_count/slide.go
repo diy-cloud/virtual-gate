@@ -35,9 +35,11 @@ func (s *SlideCount) TryTake(_ []byte) (bool, int) {
 	defer s.lock.Unlock()
 
 	now := int64(time.Now().UnixNano())
+
 	if now < s.prevTime {
 		return false, 0
 	}
+
 	for now > s.nextTime {
 		s.prevTime = s.nextTime - s.unit
 		s.prevCount = s.curCount
@@ -45,7 +47,7 @@ func (s *SlideCount) TryTake(_ []byte) (bool, int) {
 		s.nextTime = s.nextTime + s.unit
 	}
 
-	req := float64(s.prevCount)*float64(now-s.prevTime)/float64(s.unit) + float64(s.curCount+1)
+	req := float64(s.prevCount)*float64(-now+s.prevTime+2*s.unit)/float64(s.unit) + float64(s.curCount+1)
 	if req > s.maxConnPer {
 		return false, 0
 	}
