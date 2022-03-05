@@ -9,12 +9,11 @@ import (
 	"time"
 
 	"github.com/diy-cloud/virtual-gate/limiter"
-	"github.com/snowmerak/gopool/v2"
 )
 
 var nodePool = sync.Pool{
 	New: func() interface{} {
-		return &node{}
+		return new(node)
 	},
 }
 
@@ -45,11 +44,12 @@ type Bucket struct {
 	tokens                int64
 	regenTime             time.Duration
 	sameRemoteIPLimitRate float64
-	goPool                *gopool.GoPool
+	goPool                chan struct{}
 }
 
 func New(maxTokens, regenPerSecond int, sameRemoteIPLimitRate float64) limiter.Limiter {
-	return &Bucket{
+	ch := make(chan struct{}, maxTokens)
+	bucket := &Bucket{
 		recentlyTakensHead:    nil,
 		recentlyTakensTail:    nil,
 		recentlyTakensSet:     make(map[string]int64),
@@ -58,8 +58,28 @@ func New(maxTokens, regenPerSecond int, sameRemoteIPLimitRate float64) limiter.L
 		tokens:                int64(maxTokens),
 		regenTime:             time.Second / time.Duration(regenPerSecond),
 		sameRemoteIPLimitRate: sameRemoteIPLimitRate,
-		goPool:                gopool.New(maxTokens),
+		goPool:                ch,
 	}
+	go func() {
+		for range ch {
+			time.Sleep(bucket.regenTime)
+			bucket.lock.Lock()
+			bucket.tokens++
+			if bucket.recentlyTakensHead == nil {
+				bucket.lock.Unlock()
+				continue
+			}
+			node := bucket.recentlyTakensHead
+			bucket.recentlyTakensHead = node.next
+			if bucket.recentlyTakensHead == nil {
+				bucket.recentlyTakensTail = nil
+			}
+			bucket.recentlyTakensSet[node.value]--
+			nodePool.Put(node)
+			bucket.lock.Unlock()
+		}
+	}()
+	return bucket
 }
 
 func (b *Bucket) decreaseToken() (bool, int) {
@@ -69,13 +89,7 @@ func (b *Bucket) decreaseToken() (bool, int) {
 		return false, http.StatusNotAcceptable
 	}
 	b.tokens--
-	b.goPool.Go(func() interface{} {
-		time.Sleep(b.regenTime)
-		b.lock.Lock()
-		defer b.lock.Unlock()
-		b.tokens++
-		return nil
-	})
+	b.goPool <- struct{}{}
 	return true, http.StatusOK
 }
 
@@ -93,11 +107,11 @@ func (b *Bucket) appendTaken(key string) (bool, int) {
 	defer b.lock.Unlock()
 	b.recentlyTakensSet[key]++
 	newNode := nodePool.Get().(*node)
-	b.recentlyTakensHead.value = key
-	b.recentlyTakensHead.next = nil
+	newNode.value = key
+	newNode.next = nil
 	if b.recentlyTakensHead == nil {
 		b.recentlyTakensHead = newNode
-		b.recentlyTakensTail = nil
+		b.recentlyTakensTail = newNode
 		return true, http.StatusOK
 	}
 	b.recentlyTakensTail.next = newNode
