@@ -1,33 +1,32 @@
 package main
 
 import (
-	"fmt"
-	"sync"
-	"time"
+	"log"
+	"net"
 
-	"github.com/diy-cloud/virtual-gate/limiter/slide_count"
-	"github.com/diy-cloud/virtual-gate/limiter/slide_count/acl"
+	"github.com/diy-cloud/virtual-gate/proxy/tcp_proxy"
 )
 
 func main() {
-	limiter := slide_count.New(20000, time.Microsecond)
-	acl := acl.New(2000, time.Microsecond)
-	wg := new(sync.WaitGroup)
-	s := time.Now()
-	for i := 0; i < 10000000; i++ {
-		wg.Add(1)
+	tcpProxy := tcp_proxy.NewTcpProxy()
+
+	lis, err := net.ListenTCP("tcp", &net.TCPAddr{
+		IP:   net.ParseIP("0.0.0.0"),
+		Port: 8000,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for {
+		conn, err := lis.AcceptTCP()
+		if err != nil {
+			log.Fatal(err)
+		}
 		go func() {
-			defer wg.Done()
-			for {
-				b, _ := limiter.TryTake(nil)
-				a, _ := acl.TryTake([]byte("test"))
-				if b && a {
-					break
-				}
+			if err := tcpProxy.Connect("localhost:8080", conn); err != nil {
+				log.Println(err)
 			}
 		}()
 	}
-	wg.Wait()
-	e := time.Now()
-	fmt.Println(e.Sub(s))
 }
