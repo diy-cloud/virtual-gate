@@ -9,7 +9,7 @@ import (
 )
 
 var timeNodePool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return new(timeNode)
 	},
 }
