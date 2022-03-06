@@ -28,6 +28,7 @@ func (tp *TcpProxy) Connect(upstreamAddress string, client *net.TCPConn) error {
 	if !ok {
 		ups = make([]*net.TCPConn, 0)
 	}
+	fmt.Println(len(ups))
 	if len(ups) == 0 {
 		conn, err := net.Dial("tcp", upstreamAddress)
 		if err != nil {
@@ -92,8 +93,13 @@ func (tp *TcpProxy) Connect(upstreamAddress string, client *net.TCPConn) error {
 			errChan <- err
 		}()
 
+		errCount := 0
 		for err := range errChan {
 			log.Printf("TcpProxy.Connect: %s\n", err)
+			errCount++
+			if errCount >= 2 {
+				close(errChan)
+			}
 		}
 
 		tp.lock.Lock()
@@ -111,7 +117,6 @@ func (tp *TcpProxy) Connect(upstreamAddress string, client *net.TCPConn) error {
 		}
 		ups = append(ups, conn)
 		tp.connPool[upstreamAddress] = ups
-		fmt.Println(len(tp.connPool[upstreamAddress]))
 	}()
 
 	return nil
