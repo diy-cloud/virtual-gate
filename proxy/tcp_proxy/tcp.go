@@ -41,7 +41,7 @@ func (tp *TcpProxy) Connect(upstreamAddress string, client *net.TCPConn) error {
 	ups = ups[1:]
 	tp.connPool[upstreamAddress] = ups
 	go func() {
-		clientEnd, upstreamEnd := int64(0), int64(0)
+		upstreamEnd := int64(0)
 
 		buf := [4096]byte{}
 		globalErr := error(nil)
@@ -49,7 +49,6 @@ func (tp *TcpProxy) Connect(upstreamAddress string, client *net.TCPConn) error {
 			recvN, err := client.Read(buf[:])
 			if err != nil {
 				globalErr = fmt.Errorf("TcpProxy.Connect: client.Read: %s", err)
-				atomic.StoreInt64(&clientEnd, 1)
 				break
 			}
 			sendN, err := conn.Write(buf[:recvN])
@@ -71,7 +70,6 @@ func (tp *TcpProxy) Connect(upstreamAddress string, client *net.TCPConn) error {
 			sendN, err = client.Write(buf[:recvN])
 			if err != nil {
 				globalErr = fmt.Errorf("TcpProxy.Connect: client.Write: %s", err)
-				atomic.StoreInt64(&clientEnd, 1)
 				break
 			}
 			if recvN != sendN {
@@ -86,9 +84,7 @@ func (tp *TcpProxy) Connect(upstreamAddress string, client *net.TCPConn) error {
 
 		tp.lock.Lock()
 		defer tp.lock.Unlock()
-		if atomic.LoadInt64(&clientEnd) == 1 {
-			client.Close()
-		}
+		client.Close()
 		if atomic.LoadInt64(&upstreamEnd) == 1 {
 			conn.Close()
 			return
@@ -116,4 +112,13 @@ func (tp *TcpProxy) Close() error {
 		}
 	}
 	return nil
+}
+
+func (tp *TcpProxy) Length(name string) int {
+	tp.lock.Lock()
+	defer tp.lock.Unlock()
+	if ups, ok := tp.connPool[name]; ok {
+		return len(ups)
+	}
+	return 0
 }
