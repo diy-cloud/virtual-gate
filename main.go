@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net"
 
@@ -12,7 +13,7 @@ func main() {
 
 	lis, err := net.ListenTCP("tcp", &net.TCPAddr{
 		IP:   net.ParseIP("0.0.0.0"),
-		Port: 8000,
+		Port: 8999,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -27,6 +28,7 @@ func main() {
 			if err := tcpProxy.Connect("localhost:8080", conn); err != nil {
 				log.Println(err)
 			}
+			fmt.Println(tcpProxy.Length("localhost:8080"))
 		}()
 	}
 }
