@@ -9,6 +9,7 @@ import (
 	"github.com/diy-cloud/virtual-gate/lock"
 )
 
+// not implemented
 type TcpProxy struct {
 	connPool map[string][]*net.TCPConn
 	lock     *lock.Lock
@@ -28,7 +29,7 @@ func (tp *TcpProxy) Connect(upstreamAddress string, client *net.TCPConn) error {
 	if !ok {
 		ups = make([]*net.TCPConn, 0)
 	}
-	fmt.Println(len(ups))
+	fmt.Println("when take: ", len(ups))
 	if len(ups) == 0 {
 		conn, err := net.Dial("tcp", upstreamAddress)
 		if err != nil {
@@ -47,50 +48,50 @@ func (tp *TcpProxy) Connect(upstreamAddress string, client *net.TCPConn) error {
 
 		go func() {
 			buf := [4096]byte{}
-			err := error(nil)
+			globalErr := error(nil)
 			for {
 				recvN, err := client.Read(buf[:])
 				if err != nil {
-					err = fmt.Errorf("TcpProxy.Connect: client.Read: %s", err)
+					globalErr = fmt.Errorf("TcpProxy.Connect: client.Read: %s", err)
 					atomic.StoreInt64(&clientEnd, 1)
 					break
 				}
-				sendN, err := conn.Write(buf[:])
+				sendN, err := conn.Write(buf[:recvN])
 				if err != nil {
-					err = fmt.Errorf("TcpProxy.Connect: client.Write: %s", err)
+					globalErr = fmt.Errorf("TcpProxy.Connect: client.Write: %s", err)
 					atomic.StoreInt64(&upstreamEnd, 1)
 					break
 				}
 				if recvN != sendN {
-					err = fmt.Errorf("TcpProxy.Connect: client.Read != conn.Write: %d != %d", recvN, sendN)
+					globalErr = fmt.Errorf("TcpProxy.Connect: client.Read != conn.Write: %d != %d", recvN, sendN)
 					break
 				}
 			}
-			errChan <- err
+			errChan <- globalErr
 		}()
 
 		go func() {
 			buf := [4096]byte{}
-			err := error(nil)
+			globalErr := error(nil)
 			for {
 				recvN, err := conn.Read(buf[:])
 				if err != nil {
-					err = fmt.Errorf("TcpProxy.Connect: conn.Read: %s", err)
+					globalErr = fmt.Errorf("TcpProxy.Connect: conn.Read: %s", err)
 					atomic.StoreInt64(&upstreamEnd, 1)
 					break
 				}
-				sendN, err := client.Write(buf[:])
+				sendN, err := client.Write(buf[:recvN])
 				if err != nil {
-					err = fmt.Errorf("TcpProxy.Connect: conn.Write: %s", err)
+					globalErr = fmt.Errorf("TcpProxy.Connect: conn.Write: %s", err)
 					atomic.StoreInt64(&clientEnd, 1)
 					break
 				}
 				if recvN != sendN {
-					err = fmt.Errorf("TcpProxy.Connect: conn.Read != client.Write: %d != %d", recvN, sendN)
+					globalErr = fmt.Errorf("TcpProxy.Connect: conn.Read != client.Write: %d != %d", recvN, sendN)
 					break
 				}
 			}
-			errChan <- err
+			errChan <- globalErr
 		}()
 
 		errCount := 0
@@ -117,6 +118,7 @@ func (tp *TcpProxy) Connect(upstreamAddress string, client *net.TCPConn) error {
 		}
 		ups = append(ups, conn)
 		tp.connPool[upstreamAddress] = ups
+		fmt.Println("when offer: ", len(tp.connPool[upstreamAddress]))
 	}()
 
 	return nil
