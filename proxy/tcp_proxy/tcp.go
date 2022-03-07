@@ -103,3 +103,17 @@ func (tp *TcpProxy) Connect(upstreamAddress string, client *net.TCPConn) error {
 
 	return nil
 }
+
+func (tp *TcpProxy) Close() error {
+	tp.lock.Lock()
+	defer tp.lock.Unlock()
+	for name, ups := range tp.connPool {
+		for j, conn := range ups {
+			if err := conn.Close(); err != nil {
+				tp.connPool[name] = ups[j:]
+				return err
+			}
+		}
+	}
+	return nil
+}
