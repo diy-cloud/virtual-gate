@@ -10,36 +10,33 @@ import (
 )
 
 type TcpProxy struct {
-	connPool map[string][]*net.TCPConn
-	lock     *lock.Lock
+	upstreamAddress string
+	connPool        []*net.TCPConn
+	lock            *lock.Lock
 }
 
-func NewTcpProxy() *TcpProxy {
+func NewTcpProxy(upstreamAddress string) *TcpProxy {
 	return &TcpProxy{
-		connPool: make(map[string][]*net.TCPConn),
-		lock:     new(lock.Lock),
+		upstreamAddress: upstreamAddress,
+		connPool:        make([]*net.TCPConn, 0, 10),
+		lock:            new(lock.Lock),
 	}
 }
 
-func (tp *TcpProxy) Connect(upstreamAddress string, client *net.TCPConn) error {
+func (tp *TcpProxy) Connect(client *net.TCPConn) error {
 	tp.lock.Lock()
 	defer tp.lock.Unlock()
-	ups, ok := tp.connPool[upstreamAddress]
-	if !ok {
-		ups = make([]*net.TCPConn, 0)
-	}
-	if len(ups) == 0 {
-		conn, err := net.Dial("tcp", upstreamAddress)
+	if len(tp.connPool) == 0 {
+		conn, err := net.Dial("tcp", tp.upstreamAddress)
 		if err != nil {
 			return fmt.Errorf("TcpProxy.Connect: net.Dial: %s", err)
 		}
 		tcpConn := conn.(*net.TCPConn)
 		tcpConn.SetKeepAlive(true)
-		ups = append(ups, tcpConn)
+		tp.connPool = append(tp.connPool, tcpConn)
 	}
-	conn := ups[0]
-	ups = ups[1:]
-	tp.connPool[upstreamAddress] = ups
+	conn := tp.connPool[0]
+	tp.connPool = tp.connPool[1:]
 	go func() {
 		upstreamEnd := int64(0)
 
@@ -89,12 +86,7 @@ func (tp *TcpProxy) Connect(upstreamAddress string, client *net.TCPConn) error {
 			conn.Close()
 			return
 		}
-		ups, ok := tp.connPool[upstreamAddress]
-		if !ok {
-			ups = make([]*net.TCPConn, 0, 1)
-		}
-		ups = append(ups, conn)
-		tp.connPool[upstreamAddress] = ups
+		tp.connPool = append(tp.connPool, conn)
 	}()
 
 	return nil
@@ -103,22 +95,17 @@ func (tp *TcpProxy) Connect(upstreamAddress string, client *net.TCPConn) error {
 func (tp *TcpProxy) Close() error {
 	tp.lock.Lock()
 	defer tp.lock.Unlock()
-	for name, ups := range tp.connPool {
-		for j, conn := range ups {
-			if err := conn.Close(); err != nil {
-				tp.connPool[name] = ups[j:]
-				return err
-			}
+	for i, conn := range tp.connPool {
+		if err := conn.Close(); err != nil {
+			tp.connPool = tp.connPool[i:]
+			return err
 		}
 	}
 	return nil
 }
 
-func (tp *TcpProxy) Length(name string) int {
+func (tp *TcpProxy) Length() int {
 	tp.lock.Lock()
 	defer tp.lock.Unlock()
-	if ups, ok := tp.connPool[name]; ok {
-		return len(ups)
-	}
-	return 0
+	return len(tp.connPool)
 }
