@@ -1,4 +1,4 @@
-package circuit_breaker
+package breaker
 
 import "errors"
 

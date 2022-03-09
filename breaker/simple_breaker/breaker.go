@@ -1,7 +1,7 @@
 package simple_breaker
 
 import (
-	"github.com/diy-cloud/virtual-gate/circuit_breaker"
+	"github.com/diy-cloud/virtual-gate/breaker"
 	"github.com/diy-cloud/virtual-gate/lock"
 )
 
@@ -10,7 +10,7 @@ type Breaker struct {
 	l     *lock.Lock
 }
 
-func New() circuit_breaker.CurciutBreaker {
+func New() breaker.CurciutBreaker {
 	return &Breaker{
 		cache: make(map[string]struct{}),
 		l:     new(lock.Lock),
