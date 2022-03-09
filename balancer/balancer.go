@@ -26,3 +26,9 @@ var valueIsNotExistErr = errors.New("value is not exist")
 func ErrorValueIsNotExist() error {
 	return valueIsNotExistErr
 }
+
+var noAvaliableTargetErr = errors.New("no avaliable target")
+
+func ErrorNoAvaliableTarget() error {
+	return noAvaliableTargetErr
+}
