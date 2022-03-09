@@ -2,61 +2,23 @@ package main
 
 import (
 	"fmt"
-	"hash/fnv"
-	"log"
-	"sync"
-	"time"
 
-	"github.com/diy-cloud/virtual-gate/balancer/hashed"
-	"github.com/diy-cloud/virtual-gate/lock"
+	"github.com/diy-cloud/virtual-gate/breaker/count_breaker"
 )
 
 func main() {
-	balancer := hashed.New(fnv.New64a())
-
-	ids := []string{
-		"localhost:8080",
-		"localhost:8081",
-		"localhost:8082",
-		"localhost:8083",
-		"localhost:8084",
-		"localhost:8085",
-		"localhost:8086",
-		"localhost:8087",
-		"localhost:8088",
-		"localhost:8089",
-		"localhost:8090",
-		"localhost:8091",
-		"localhost:8092",
+	breaker := count_breaker.New(10)
+	brokenCount := 0
+	for i := 0; i < 100; i++ {
+		if breaker.IsBrokeDown("test") {
+			brokenCount++
+			i--
+		}
+		if i%3 == 0 {
+			breaker.BreakDown("test")
+			continue
+		}
+		breaker.Restore("test")
 	}
-
-	balancer.Add("a")
-	balancer.Add("b")
-	balancer.Add("c")
-	balancer.Add("d")
-	balancer.Add("e")
-
-	used := map[string]int{}
-	lock := new(lock.Lock)
-
-	wg := new(sync.WaitGroup)
-	for i := 0; i < 1000; i++ {
-		wg.Add(1)
-		go func(id string) {
-			defer wg.Done()
-			target, err := balancer.Get(id)
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			lock.Lock()
-			used[target]++
-			lock.Unlock()
-			time.Sleep(time.Millisecond * 100)
-			balancer.Restore(target)
-		}(ids[i%len(ids)])
-	}
-	wg.Wait()
-
-	fmt.Println(used)
+	fmt.Println(brokenCount)
 }
