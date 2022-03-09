@@ -1,4 +1,4 @@
-package breaker
+package simple_breaker
 
 import (
 	"github.com/diy-cloud/virtual-gate/circuit_breaker"
