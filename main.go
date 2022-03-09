@@ -2,18 +2,33 @@ package main
 
 import (
 	"fmt"
+	"hash/fnv"
 	"log"
 	"sync"
 	"time"
 
-	"github.com/diy-cloud/virtual-gate/balancer/round"
+	"github.com/diy-cloud/virtual-gate/balancer/hashed"
 	"github.com/diy-cloud/virtual-gate/lock"
 )
 
 func main() {
-	balancer := round.New()
+	balancer := hashed.New(fnv.New64a())
 
-	ids := []string{"a", "b", "c", "d", "e", "d", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"}
+	ids := []string{
+		"localhost:8080",
+		"localhost:8081",
+		"localhost:8082",
+		"localhost:8083",
+		"localhost:8084",
+		"localhost:8085",
+		"localhost:8086",
+		"localhost:8087",
+		"localhost:8088",
+		"localhost:8089",
+		"localhost:8090",
+		"localhost:8091",
+		"localhost:8092",
+	}
 
 	balancer.Add("a")
 	balancer.Add("b")
