@@ -1,24 +1,23 @@
 package hashed
 
 import (
-	"encoding/binary"
+	"hash"
 
 	"github.com/diy-cloud/virtual-gate/balancer"
 	"github.com/diy-cloud/virtual-gate/lock"
 )
 
 type Hashed struct {
-	candidates map[uint64]string
-	hash       func([]byte) [32]byte
-	count      uint64
+	candidates []string
+	hasher     hash.Hash64
+	index      int
 	l          *lock.Lock
 }
 
-func New(hash func([]byte) [32]byte) balancer.Balancer {
+func New(hasher hash.Hash64) balancer.Balancer {
 	return &Hashed{
-		candidates: make(map[uint64]string),
-		hash:       hash,
-		count:      0,
+		candidates: make([]string, 0, 8),
+		hasher:     hasher,
 		l:          new(lock.Lock),
 	}
 }
@@ -27,22 +26,22 @@ func (h *Hashed) Add(target string) error {
 	h.l.Lock()
 	defer h.l.Unlock()
 
-	tombIndex := uint64(0)
-	for i := uint64(0); i < h.count; i++ {
-		if _, ok := h.candidates[i]; !ok && tombIndex == 0 {
-			tombIndex = i
-		}
-		if h.candidates[i] == target {
+	firstTombstoneIndex := -1
+	for i, candidate := range h.candidates {
+		if candidate == target {
 			return balancer.ErrorAlreadyExist()
 		}
+		if candidate == "" && firstTombstoneIndex == -1 {
+			firstTombstoneIndex = i
+		}
 	}
 
-	if tombIndex == 0 {
-		h.candidates[h.count] = target
-		h.count++
+	if firstTombstoneIndex != -1 {
+		h.candidates[firstTombstoneIndex] = target
+		return nil
 	}
 
-	h.candidates[tombIndex] = target
+	h.candidates = append(h.candidates, target)
 
 	return nil
 }
@@ -51,9 +50,9 @@ func (h *Hashed) Sub(target string) error {
 	h.l.Lock()
 	defer h.l.Unlock()
 
-	for i := uint64(0); i < h.count; i++ {
-		if h.candidates[i] == target {
-			delete(h.candidates, i)
+	for i, candidate := range h.candidates {
+		if candidate == target {
+			h.candidates[i] = ""
 			return nil
 		}
 	}
@@ -65,21 +64,23 @@ func (h *Hashed) Get(id string) (string, error) {
 	h.l.Lock()
 	defer h.l.Unlock()
 
-	if h.count == 0 {
-		return "", balancer.ErrorAnythingNotExist()
-	}
-
-	hashed := h.hash([]byte(id))
-	i := binary.BigEndian.Uint64(hashed[:8])
-	s := i % h.count
+	h.hasher.Reset()
+	h.hasher.Write([]byte(id))
+	hashedIndex := int(h.hasher.Sum64() % uint64(len(h.candidates)))
+	count := 0
 	for {
-		if _, ok := h.candidates[s]; ok {
-			return h.candidates[s], nil
+		count++
+		if count >= len(h.candidates) {
+			return "", balancer.ErrorNoAvaliableTarget()
 		}
-		s++
-		if s == h.count {
-			s = 0
+		if hashedIndex >= len(h.candidates) {
+			hashedIndex = 0
 		}
+		candidate := h.candidates[hashedIndex]
+		if candidate != "" {
+			return candidate, nil
+		}
+		hashedIndex = hashedIndex + 1
 	}
 }
 
