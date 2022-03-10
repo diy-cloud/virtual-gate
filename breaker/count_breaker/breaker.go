@@ -26,7 +26,9 @@ func New(maxCount int, minimumRate float64) breaker.CurciutBreaker {
 func (c *CountBreaker) BreakDown(target string) error {
 	c.l.Lock()
 	defer c.l.Unlock()
-	c.cache[target] += 1
+	if c.cache[target] < c.maxCount {
+		c.cache[target] += 1
+	}
 	return nil
 }
 
