@@ -8,17 +8,17 @@ import (
 )
 
 func main() {
-	l := make([]int, 1000)
-	for k := 0; k < 1000; k++ {
-		breaker := count_breaker.New(100, 20)
+	l := make([]int, 10000)
+	for k := 0; k < 10000; k++ {
+		breaker := count_breaker.New(100, 10)
 		brokenCount := 0
-		for i := 0; i < 1000; i++ {
+		for i := 0; i < 10000; i++ {
 			if breaker.IsBrokeDown("test") {
 				brokenCount++
 				i--
 				continue
 			}
-			if rand.Int63n(100) < 80 {
+			if rand.Int63n(100) < 20 {
 				breaker.BreakDown("test")
 				continue
 			}
