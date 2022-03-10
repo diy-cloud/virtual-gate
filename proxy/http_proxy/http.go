@@ -1,7 +1,7 @@
 package http_proxy
 
 import (
-	"fmt"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -10,7 +10,6 @@ import (
 	"github.com/diy-cloud/virtual-gate/breaker"
 	"github.com/diy-cloud/virtual-gate/limiter"
 	"github.com/diy-cloud/virtual-gate/lock"
-	"github.com/diy-cloud/virtual-gate/proxy"
 )
 
 var statusCodeSet = map[int]struct{}{
@@ -27,69 +26,47 @@ var statusCodeSet = map[int]struct{}{
 	http.StatusNotExtended:           {},
 }
 
-type handler struct {
-	h func(w http.ResponseWriter, r *http.Request) bool
-	l *lock.Lock
-}
-
-type proxyMap struct {
-	m map[string]*httputil.ReverseProxy
-	l *lock.Lock
-}
-
 type HttpProxy struct {
-	handler  handler
-	proxyMap proxyMap
+	proxyCache map[string][]*httputil.ReverseProxy
+	l          *lock.Lock
 }
 
-func NewHttp() proxy.Proxy {
-	hp := new(HttpProxy)
-
-	hp.handler.h = func(w http.ResponseWriter, r *http.Request) bool { return true }
-	hp.handler.l = new(lock.Lock)
-
-	hp.proxyMap.m = make(map[string]*httputil.ReverseProxy)
-	hp.proxyMap.l = new(lock.Lock)
-
-	return hp
-}
-
-func (hp *HttpProxy) SetHandler(h func(w http.ResponseWriter, r *http.Request) bool) {
-	hp.handler.l.Lock()
-	defer hp.handler.l.Unlock()
-	hp.handler.h = h
-}
-
-func (hp *HttpProxy) SetUpstreamServer(name string, rawURL string) error {
-	url, err := url.Parse(rawURL)
-	if err != nil {
-		return fmt.Errorf("HttpProxy.SetUpstreamServer: url.Parse: %w", err)
+func NewHttp() *HttpProxy {
+	return &HttpProxy{
+		proxyCache: make(map[string][]*httputil.ReverseProxy),
+		l:          new(lock.Lock),
 	}
-
-	proxy := httputil.NewSingleHostReverseProxy(url)
-	hp.proxyMap.l.Lock()
-	defer hp.proxyMap.l.Unlock()
-	if _, ok := hp.proxyMap.m[name]; !ok {
-		delete(hp.proxyMap.m, name)
-	}
-	hp.proxyMap.m[name] = proxy
-	return nil
 }
 
 func (hp *HttpProxy) ServeHTTP(name string, w http.ResponseWriter, r *http.Request) {
-	hp.handler.l.Lock()
-	defer hp.handler.l.Unlock()
-	if !hp.handler.h(w, r) {
-		return
+	var upstreamServer *httputil.ReverseProxy
+	hp.l.Lock()
+	if l, ok := hp.proxyCache[name]; ok {
+		if len(l) > 0 {
+			upstreamServer = l[0]
+			l = append(l[1:], l[0])
+			hp.proxyCache[name] = l
+		}
 	}
+	if upstreamServer == nil {
+		url, err := url.Parse(name)
+		if err != nil {
+			log.Println(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		upstreamServer = httputil.NewSingleHostReverseProxy(url)
+	}
+	hp.l.Unlock()
 
-	hp.proxyMap.l.Lock()
-	defer hp.proxyMap.l.Unlock()
-	if proxy, ok := hp.proxyMap.m[name]; ok {
-		proxy.ServeHTTP(w, r)
-		return
+	upstreamServer.ServeHTTP(w, r)
+
+	hp.l.Lock()
+	if _, ok := hp.proxyCache[name]; !ok {
+		hp.proxyCache[name] = make([]*httputil.ReverseProxy, 0, 1)
 	}
-	w.WriteHeader(http.StatusNotFound)
+	hp.proxyCache[name] = append(hp.proxyCache[name], upstreamServer)
+	hp.l.Unlock()
 }
 
 func (hp *HttpProxy) Serve(address string, limiter limiter.Limiter, acl limiter.Limiter, breaker breaker.CurciutBreaker, balancer balancer.Balancer) error {
@@ -100,17 +77,20 @@ func (hp *HttpProxy) Serve(address string, limiter limiter.Limiter, acl limiter.
 			wr := NewResponse()
 
 			if b, code := limiter.TryTake(remote); !b {
+				log.Println("HttpProxy.Serve: limiter.TryTake: false from", r.RemoteAddr)
 				w.WriteHeader(code)
 				return
 			}
 
 			if b, code := acl.TryTake(remote); !b {
+				log.Println("HttpProxy.Serve: acl.TryTake: false from", r.RemoteAddr)
 				w.WriteHeader(code)
 				return
 			}
 
 			upstreamAddress, err := balancer.Get(r.RemoteAddr)
 			if err != nil {
+				log.Println("HttpProxy.Serve: balancer.Get:", err, "from", r.RemoteAddr)
 				w.Write([]byte(err.Error()))
 				w.WriteHeader(http.StatusInternalServerError)
 				return
@@ -118,20 +98,26 @@ func (hp *HttpProxy) Serve(address string, limiter limiter.Limiter, acl limiter.
 			defer balancer.Restore(upstreamAddress)
 
 			if ok := breaker.IsBrokeDown(upstreamAddress); ok {
+				log.Println("HttpProxy.Serve: breaker.IsBrokeDown: true from", r.RemoteAddr, "to", upstreamAddress)
 				continue
 			}
 
-			hp.ServeHTTP(r.Host, wr, r)
+			hp.ServeHTTP(upstreamAddress, wr, r)
 
 			if _, ok := statusCodeSet[wr.StatusCode]; ok {
+				log.Println("HttpProxy.Serve: breakDown: true from", r.RemoteAddr, "to", upstreamAddress)
 				breaker.BreakDown(upstreamAddress)
 				continue
 			}
 
 			breaker.Restore(upstreamAddress)
-		}
 
-		w.WriteHeader(http.StatusRequestTimeout)
+			if _, ok := statusCodeSet[wr.StatusCode]; !ok {
+				w.Write(wr.Body)
+				w.WriteHeader(wr.StatusCode)
+				break
+			}
+		}
 	}
 	server := http.Server{
 		Addr:    address,
