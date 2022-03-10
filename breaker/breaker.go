@@ -2,7 +2,7 @@ package breaker
 
 import "errors"
 
-type CurciutBreaker interface {
+type Breaker interface {
 	BreakDown(target string) error
 	Restore(target string) error
 	IsBrokeDown(target string) bool

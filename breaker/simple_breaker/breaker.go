@@ -10,7 +10,7 @@ type Breaker struct {
 	l     *lock.Lock
 }
 
-func New() breaker.CurciutBreaker {
+func New() breaker.Breaker {
 	return &Breaker{
 		cache: make(map[string]struct{}),
 		l:     new(lock.Lock),

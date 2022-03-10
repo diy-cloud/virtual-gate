@@ -119,7 +119,7 @@ func (tp *TcpProxy) Length() int {
 	return len(tp.connPool)
 }
 
-func (tp *TcpProxy) Serve(address string, limiter limiter.Limiter, acl limiter.Limiter, breaker breaker.CurciutBreaker, balancer balancer.Balancer) error {
+func (tp *TcpProxy) Serve(address string, limiter limiter.Limiter, acl limiter.Limiter, breaker breaker.Breaker, balancer balancer.Balancer) error {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return fmt.Errorf("TcpProxy.Serve: net.Listen: %s", err)

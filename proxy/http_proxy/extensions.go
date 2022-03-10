@@ -25,7 +25,7 @@ func NewHttps(cert string, key string, httpProxy *HttpProxy) proxy.Proxy {
 	}
 }
 
-func (hp *HttpsProxy) Serve(address string, limiter limiter.Limiter, acl limiter.Limiter, breaker breaker.CurciutBreaker, balancer balancer.Balancer) error {
+func (hp *HttpsProxy) Serve(address string, limiter limiter.Limiter, acl limiter.Limiter, breaker breaker.Breaker, balancer balancer.Balancer) error {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		remote := []byte(r.RemoteAddr)
 
@@ -83,7 +83,7 @@ func NewHttp2(httpProxy *HttpProxy) proxy.Proxy {
 	}
 }
 
-func (hp *Http2Proxy) Serve(address string, limiter limiter.Limiter, acl limiter.Limiter, breaker breaker.CurciutBreaker, balancer balancer.Balancer) error {
+func (hp *Http2Proxy) Serve(address string, limiter limiter.Limiter, acl limiter.Limiter, breaker breaker.Breaker, balancer balancer.Balancer) error {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		remote := []byte(r.RemoteAddr)
 
@@ -148,7 +148,7 @@ func NewHttp2TLS(cert string, key string, httpProxy *HttpProxy) proxy.Proxy {
 	}
 }
 
-func (hp *Https2Proxy) Serve(address string, limiter limiter.Limiter, acl limiter.Limiter, breaker breaker.CurciutBreaker, balancer balancer.Balancer) error {
+func (hp *Https2Proxy) Serve(address string, limiter limiter.Limiter, acl limiter.Limiter, breaker breaker.Breaker, balancer balancer.Balancer) error {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		remote := []byte(r.RemoteAddr)
 

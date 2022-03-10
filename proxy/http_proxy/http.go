@@ -64,7 +64,7 @@ func (hp *HttpProxy) ServeHTTP(name string, w http.ResponseWriter, r *http.Reque
 	hp.l.Unlock()
 }
 
-func (hp *HttpProxy) Serve(address string, limiter limiter.Limiter, acl limiter.Limiter, breaker breaker.CurciutBreaker, balancer balancer.Balancer) error {
+func (hp *HttpProxy) Serve(address string, limiter limiter.Limiter, acl limiter.Limiter, breaker breaker.Breaker, balancer balancer.Balancer) error {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		remote := []byte(r.RemoteAddr)
 

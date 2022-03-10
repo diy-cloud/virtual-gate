@@ -14,7 +14,7 @@ type CountBreaker struct {
 	l           *lock.Lock
 }
 
-func New(maxCount int, minimumRate float64) breaker.CurciutBreaker {
+func New(maxCount int, minimumRate float64) breaker.Breaker {
 	return &CountBreaker{
 		cache:       make(map[string]int),
 		maxCount:    maxCount,
