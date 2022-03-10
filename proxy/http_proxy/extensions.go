@@ -50,7 +50,7 @@ func (hp *HttpsProxy) Serve(address string, limiter limiter.Limiter, acl limiter
 			}
 			defer balancer.Restore(upstreamAddress)
 
-			if ok := breaker.IsBrokeDown(upstreamAddress); !ok {
+			if ok := breaker.IsBrokeDown(upstreamAddress); ok {
 				continue
 			}
 
@@ -108,7 +108,7 @@ func (hp *Http2Proxy) Serve(address string, limiter limiter.Limiter, acl limiter
 			}
 			defer balancer.Restore(upstreamAddress)
 
-			if ok := breaker.IsBrokeDown(upstreamAddress); !ok {
+			if ok := breaker.IsBrokeDown(upstreamAddress); ok {
 				continue
 			}
 
@@ -173,7 +173,7 @@ func (hp *Https2Proxy) Serve(address string, limiter limiter.Limiter, acl limite
 			}
 			defer balancer.Restore(upstreamAddress)
 
-			if ok := breaker.IsBrokeDown(upstreamAddress); !ok {
+			if ok := breaker.IsBrokeDown(upstreamAddress); ok {
 				continue
 			}
 

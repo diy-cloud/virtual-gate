@@ -14,6 +14,7 @@ import (
 )
 
 var statusCodeSet = map[int]struct{}{
+	http.StatusNotFound:              {},
 	http.StatusRequestTimeout:        {},
 	http.StatusFailedDependency:      {},
 	http.StatusInternalServerError:   {},
@@ -116,7 +117,7 @@ func (hp *HttpProxy) Serve(address string, limiter limiter.Limiter, acl limiter.
 			}
 			defer balancer.Restore(upstreamAddress)
 
-			if ok := breaker.IsBrokeDown(upstreamAddress); !ok {
+			if ok := breaker.IsBrokeDown(upstreamAddress); ok {
 				continue
 			}
 
