@@ -2,46 +2,52 @@ package tcp_proxy
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net"
+	"strconv"
 	"sync/atomic"
 
+	"github.com/diy-cloud/virtual-gate/balancer"
+	"github.com/diy-cloud/virtual-gate/breaker"
+	"github.com/diy-cloud/virtual-gate/limiter"
 	"github.com/diy-cloud/virtual-gate/lock"
 	"github.com/diy-cloud/virtual-gate/proxy"
 )
 
 type TcpProxy struct {
-	upstreamAddress string
-	connPool        []*net.TCPConn
-	lock            *lock.Lock
+	connPool map[string][]*net.TCPConn
+	lock     *lock.Lock
 }
 
-func NewTcpProxy(upstreamAddress string) proxy.Proxy {
+func NewTcpProxy() proxy.Proxy {
 	return &TcpProxy{
-		upstreamAddress: upstreamAddress,
-		connPool:        make([]*net.TCPConn, 0, 10),
-		lock:            new(lock.Lock),
+		connPool: make(map[string][]*net.TCPConn),
+		lock:     new(lock.Lock),
 	}
 }
 
-func (tp *TcpProxy) Connect(client *net.TCPConn) error {
+func (tp *TcpProxy) Connect(client *net.TCPConn, upstreamAddress string) error {
 	tp.lock.Lock()
 	defer tp.lock.Unlock()
-	if len(tp.connPool) == 0 {
-		conn, err := net.Dial("tcp", tp.upstreamAddress)
+	if _, ok := tp.connPool[upstreamAddress]; !ok {
+		tp.connPool[upstreamAddress] = make([]*net.TCPConn, 1)
+	}
+	if len(tp.connPool[upstreamAddress]) == 0 {
+		conn, err := net.Dial("tcp", upstreamAddress)
 		if err != nil {
 			return fmt.Errorf("TcpProxy.Connect: net.Dial: %s", err)
 		}
 		tcpConn := conn.(*net.TCPConn)
 		tcpConn.SetKeepAlive(true)
-		tp.connPool = append(tp.connPool, tcpConn)
+		tp.connPool[upstreamAddress] = append(tp.connPool[upstreamAddress], tcpConn)
 	}
-	conn := tp.connPool[0]
-	tp.connPool = tp.connPool[1:]
+	conn := tp.connPool[upstreamAddress][0]
+	tp.connPool[upstreamAddress] = tp.connPool[upstreamAddress][1:]
 	go func() {
 		upstreamEnd := int64(0)
 
-		buf := [4096]byte{}
+		buf := [8192]byte{}
 		globalErr := error(nil)
 		for {
 			recvN, err := client.Read(buf[:])
@@ -87,7 +93,7 @@ func (tp *TcpProxy) Connect(client *net.TCPConn) error {
 			conn.Close()
 			return
 		}
-		tp.connPool = append(tp.connPool, conn)
+		tp.connPool[upstreamAddress] = append(tp.connPool[upstreamAddress], conn)
 	}()
 
 	return nil
@@ -96,10 +102,12 @@ func (tp *TcpProxy) Connect(client *net.TCPConn) error {
 func (tp *TcpProxy) Close() error {
 	tp.lock.Lock()
 	defer tp.lock.Unlock()
-	for i, conn := range tp.connPool {
-		if err := conn.Close(); err != nil {
-			tp.connPool = tp.connPool[i:]
-			return err
+	for k, pool := range tp.connPool {
+		for i, conn := range pool {
+			if err := conn.Close(); err != nil {
+				tp.connPool[k] = tp.connPool[k][i:]
+				return err
+			}
 		}
 	}
 	return nil
@@ -111,7 +119,7 @@ func (tp *TcpProxy) Length() int {
 	return len(tp.connPool)
 }
 
-func (tp *TcpProxy) Serve(address string) error {
+func (tp *TcpProxy) Serve(address string, limiter limiter.Limiter, acl limiter.Limiter, breaker breaker.CurciutBreaker, balancer balancer.Balancer) error {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return fmt.Errorf("TcpProxy.Serve: net.Listen: %s", err)
@@ -122,8 +130,44 @@ func (tp *TcpProxy) Serve(address string) error {
 			return fmt.Errorf("TcpProxy.Serve: listener.Accept: %s", err)
 		}
 		go func() {
-			if err := tp.Connect(conn.(*net.TCPConn)); err != nil {
-				log.Printf("TcpProxy.Serve: %s\n", err)
+			remote := []byte(conn.RemoteAddr().String())
+
+			for {
+				if ok, code := limiter.TryTake(remote); !ok {
+					conn.Write([]byte(strconv.Itoa(code)))
+					conn.Close()
+					return
+				}
+
+				if ok, code := acl.TryTake(remote); !ok {
+					conn.Write([]byte(strconv.Itoa(code)))
+					conn.Close()
+					return
+				}
+
+				upstreamAddress, err := balancer.Get(conn.RemoteAddr().String())
+				if err != nil {
+					conn.Write([]byte(err.Error()))
+					conn.Close()
+					return
+				}
+				defer balancer.Restore(upstreamAddress)
+
+				if ok := breaker.IsBrokeDown(upstreamAddress); !ok {
+					continue
+				}
+
+				if err := tp.Connect(conn.(*net.TCPConn), upstreamAddress); err != nil {
+					if err != io.EOF {
+						breaker.BreakDown(upstreamAddress)
+						conn.Write([]byte(err.Error()))
+						conn.Close()
+						return
+					}
+					conn.Close()
+				}
+
+				breaker.Restore(upstreamAddress)
 			}
 		}()
 	}
