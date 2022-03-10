@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/diy-cloud/virtual-gate/lock"
+	"github.com/diy-cloud/virtual-gate/proxy"
 )
 
 type TcpProxy struct {
@@ -15,7 +16,7 @@ type TcpProxy struct {
 	lock            *lock.Lock
 }
 
-func NewTcpProxy(upstreamAddress string) *TcpProxy {
+func NewTcpProxy(upstreamAddress string) proxy.Proxy {
 	return &TcpProxy{
 		upstreamAddress: upstreamAddress,
 		connPool:        make([]*net.TCPConn, 0, 10),
@@ -108,4 +109,22 @@ func (tp *TcpProxy) Length() int {
 	tp.lock.Lock()
 	defer tp.lock.Unlock()
 	return len(tp.connPool)
+}
+
+func (tp *TcpProxy) Serve(address string) error {
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return fmt.Errorf("TcpProxy.Serve: net.Listen: %s", err)
+	}
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			return fmt.Errorf("TcpProxy.Serve: listener.Accept: %s", err)
+		}
+		go func() {
+			if err := tp.Connect(conn.(*net.TCPConn)); err != nil {
+				log.Printf("TcpProxy.Serve: %s\n", err)
+			}
+		}()
+	}
 }
