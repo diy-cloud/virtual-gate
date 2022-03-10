@@ -8,16 +8,18 @@ import (
 )
 
 type CountBreaker struct {
-	cache    map[string]int
-	maxCount int
-	l        *lock.Lock
+	cache       map[string]int
+	maxCount    int
+	minimumRate float64
+	l           *lock.Lock
 }
 
-func New(maxCount int) breaker.CurciutBreaker {
+func New(maxCount int, minimumRate float64) breaker.CurciutBreaker {
 	return &CountBreaker{
-		cache:    make(map[string]int),
-		maxCount: maxCount,
-		l:        new(lock.Lock),
+		cache:       make(map[string]int),
+		maxCount:    maxCount,
+		minimumRate: minimumRate,
+		l:           new(lock.Lock),
 	}
 }
 
@@ -41,7 +43,11 @@ func (c *CountBreaker) IsBrokeDown(target string) bool {
 	c.l.Lock()
 	defer c.l.Unlock()
 	fMaxCount := float64(c.maxCount)
-	maxRate := ((fMaxCount-float64(c.cache[target]))/fMaxCount)*90 + 10
+	fTarget := float64(c.cache[target])
+	if fTarget >= fMaxCount {
+		fTarget = fMaxCount
+	}
+	maxRate := ((fMaxCount-fTarget)/fMaxCount)*(100-c.minimumRate) + c.minimumRate
 	rnd := rand.Float64() * 100
 	return rnd >= maxRate
 }
