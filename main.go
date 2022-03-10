@@ -6,13 +6,13 @@ import (
 	"github.com/diy-cloud/virtual-gate/balancer/least"
 	"github.com/diy-cloud/virtual-gate/breaker/count_breaker"
 	"github.com/diy-cloud/virtual-gate/limiter/slide_count"
-	"github.com/diy-cloud/virtual-gate/limiter/slide_count/acl"
+	"github.com/diy-cloud/virtual-gate/limiter/slide_count/acc"
 	"github.com/diy-cloud/virtual-gate/proxy/http_proxy"
 )
 
 func main() {
 	limiter := slide_count.New(30000, time.Microsecond)
-	acl := acl.New(60, time.Microsecond)
+	acc := acc.New(60, time.Microsecond)
 	breaker := count_breaker.New(200, 10)
 	balancer := least.New()
 	balancer.Add("http://127.0.0.1:8080")
@@ -27,7 +27,7 @@ func main() {
 	balancer.Add("http://127.0.0.1:8089")
 	proxy := http_proxy.NewHttp()
 
-	if err := proxy.Serve("0.0.0.0:9999", limiter, acl, breaker, balancer); err != nil {
+	if err := proxy.Serve("0.0.0.0:9999", limiter, acc, breaker, balancer); err != nil {
 		panic(err)
 	}
 }
