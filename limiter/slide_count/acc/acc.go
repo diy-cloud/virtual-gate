@@ -1,4 +1,4 @@
-package acl
+package acc
 
 import (
 	"time"
@@ -8,7 +8,7 @@ import (
 	"github.com/diy-cloud/virtual-gate/lock"
 )
 
-type AccessControlList struct {
+type AccessControlCount struct {
 	lock       *lock.Lock
 	list       map[string]limiter.Limiter
 	maxConnPer float64
@@ -16,7 +16,7 @@ type AccessControlList struct {
 }
 
 func New(maxConnPer float64, unit time.Duration) limiter.Limiter {
-	return &AccessControlList{
+	return &AccessControlCount{
 		lock:       new(lock.Lock),
 		list:       nil,
 		maxConnPer: maxConnPer,
@@ -24,18 +24,18 @@ func New(maxConnPer float64, unit time.Duration) limiter.Limiter {
 	}
 }
 
-func (acl *AccessControlList) TryTake(key []byte) (bool, int) {
-	acl.lock.Lock()
-	defer acl.lock.Unlock()
+func (acc *AccessControlCount) TryTake(key []byte) (bool, int) {
+	acc.lock.Lock()
+	defer acc.lock.Unlock()
 
-	if acl.list == nil {
-		acl.list = make(map[string]limiter.Limiter)
+	if acc.list == nil {
+		acc.list = make(map[string]limiter.Limiter)
 	}
 
-	slide, ok := acl.list[string(key)]
+	slide, ok := acc.list[string(key)]
 	if !ok {
-		slide = slide_count.New(acl.maxConnPer, acl.unit)
-		acl.list[string(key)] = slide
+		slide = slide_count.New(acc.maxConnPer, acc.unit)
+		acc.list[string(key)] = slide
 	}
 
 	return slide.TryTake(nil)
