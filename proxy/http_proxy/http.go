@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	"github.com/diy-cloud/virtual-gate/lock"
+	"github.com/diy-cloud/virtual-gate/proxy"
 )
 
 type handler struct {
@@ -24,7 +25,7 @@ type HttpProxy struct {
 	proxyMap proxyMap
 }
 
-func New() *HttpProxy {
+func NewHttp() proxy.Proxy {
 	hp := new(HttpProxy)
 
 	hp.handler.h = func(w http.ResponseWriter, r *http.Request) bool { return true }
@@ -72,4 +73,15 @@ func (hp *HttpProxy) ServeHTTP(name string, w http.ResponseWriter, r *http.Reque
 		return
 	}
 	w.WriteHeader(http.StatusNotFound)
+}
+
+func (hp *HttpProxy) Serve(address string) error {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		hp.ServeHTTP(r.Host, w, r)
+	}
+	server := http.Server{
+		Addr:    address,
+		Handler: http.HandlerFunc(handler),
+	}
+	return server.ListenAndServe()
 }
