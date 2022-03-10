@@ -27,13 +27,13 @@ var statusCodeSet = map[int]struct{}{
 }
 
 type HttpProxy struct {
-	proxyCache map[string][]*httputil.ReverseProxy
+	proxyCache map[string]*httputil.ReverseProxy
 	l          *lock.Lock
 }
 
 func NewHttp() *HttpProxy {
 	return &HttpProxy{
-		proxyCache: make(map[string][]*httputil.ReverseProxy),
+		proxyCache: make(map[string]*httputil.ReverseProxy),
 		l:          new(lock.Lock),
 	}
 }
@@ -42,11 +42,7 @@ func (hp *HttpProxy) ServeHTTP(name string, w http.ResponseWriter, r *http.Reque
 	var upstreamServer *httputil.ReverseProxy
 	hp.l.Lock()
 	if l, ok := hp.proxyCache[name]; ok {
-		if len(l) > 0 {
-			upstreamServer = l[0]
-			l = append(l[1:], l[0])
-			hp.proxyCache[name] = l
-		}
+		hp.proxyCache[name] = l
 	}
 	if upstreamServer == nil {
 		url, err := url.Parse(name)
@@ -63,9 +59,8 @@ func (hp *HttpProxy) ServeHTTP(name string, w http.ResponseWriter, r *http.Reque
 
 	hp.l.Lock()
 	if _, ok := hp.proxyCache[name]; !ok {
-		hp.proxyCache[name] = make([]*httputil.ReverseProxy, 0, 1)
+		hp.proxyCache[name] = upstreamServer
 	}
-	hp.proxyCache[name] = append(hp.proxyCache[name], upstreamServer)
 	hp.l.Unlock()
 }
 
