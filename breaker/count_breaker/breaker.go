@@ -40,12 +40,8 @@ func (c *CountBreaker) Restore(target string) error {
 func (c *CountBreaker) IsBrokeDown(target string) bool {
 	c.l.Lock()
 	defer c.l.Unlock()
-	rnd := rand.Int63n(int64(c.maxCount * 120 / 100))
-	if rnd == 1 {
-		rnd++
-	}
-	if c.cache[target] > c.maxCount {
-		c.cache[target] = c.maxCount
-	}
-	return rnd < int64(c.cache[target])
+	fMaxCount := float64(c.maxCount)
+	maxRate := ((fMaxCount-float64(c.cache[target]))/fMaxCount)*90 + 10
+	rnd := rand.Float64() * 100
+	return rnd >= maxRate
 }
