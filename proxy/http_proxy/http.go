@@ -64,25 +64,25 @@ func (hp *HttpProxy) ServeHTTP(name string, w http.ResponseWriter, r *http.Reque
 	hp.l.Unlock()
 }
 
-func (hp *HttpProxy) Serve(address string, limiter limiter.Limiter, acl limiter.Limiter, breaker breaker.Breaker, balancer balancer.Balancer) error {
+func (hp *HttpProxy) Serve(address string, limiter limiter.Limiter, acc limiter.Limiter, breaker breaker.Breaker, balancer balancer.Balancer) error {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		remote := []byte(r.RemoteAddr)
 
+		wr := NewResponse()
+
+		if b, code := limiter.TryTake(remote); !b {
+			log.Println("HttpProxy.Serve: limiter.TryTake: false from", r.RemoteAddr)
+			w.WriteHeader(code)
+			return
+		}
+
+		if b, code := acc.TryTake(remote); !b {
+			log.Println("HttpProxy.Serve: acl.TryTake: false from", r.RemoteAddr)
+			w.WriteHeader(code)
+			return
+		}
+
 		for count := 0; count < 10; count++ {
-			wr := NewResponse()
-
-			if b, code := limiter.TryTake(remote); !b {
-				log.Println("HttpProxy.Serve: limiter.TryTake: false from", r.RemoteAddr)
-				w.WriteHeader(code)
-				return
-			}
-
-			if b, code := acl.TryTake(remote); !b {
-				log.Println("HttpProxy.Serve: acl.TryTake: false from", r.RemoteAddr)
-				w.WriteHeader(code)
-				return
-			}
-
 			upstreamAddress, err := balancer.Get(r.RemoteAddr)
 			if err != nil {
 				log.Println("HttpProxy.Serve: balancer.Get:", err, "from", r.RemoteAddr)
